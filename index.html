@@ -91,6 +91,10 @@
         <label class="chk"><input type="radio" name="gm" id="gm-vs"> Duel 1v1</label>
       </div>
       <label class="chk"><input type="checkbox" id="zomb" checked> Zombies activ&eacute;s</label>
+      <div class="modes">
+        <label class="chk"><input type="radio" name="df" id="df-normal" checked> Normal</label>
+        <label class="chk"><input type="radio" name="df" id="df-easy"> Facile</label>
+      </div>
     </div>
     <div id="m-wait" class="hidden" style="display:flex;flex-direction:column;gap:10px;align-items:center;">
       <div style="font-size:12px;color:#8a857a;letter-spacing:2px;">CODE DE LA PARTIE</div>
@@ -136,7 +140,8 @@ const SHIRTS = ['#5C3038','#473A42','#3E4536','#4E3B2E'];
 const PAL_G = {arm:'#36503B', vest:'#3E5C44', vestS:'#28402E', h1:'#344F3A', h2:'#44664B', glow:'rgba(120,200,160,', tint:'#78C8A0'};
 const PAL_B = {arm:'#33455C', vest:'#3A4F66', vestS:'#263A4F', h1:'#31485E', h2:'#3F5E7E', glow:'rgba(110,160,210,', tint:'#6f9ec4'};
 
-let mode = 'menu', gameMode = 'coop';
+let mode = 'menu', gameMode = 'coop', easyMode = false;
+function ZMAX(){ return easyMode ? 3 : 5; }
 let isHost = true, zombOn = true, seed = 1;
 let peer = null, conn = null;
 let walls, me, mate, zombies, bullets, parts, blood, shells, corpses;
@@ -171,7 +176,7 @@ const SOUND_FILES = {
   reload: ['sounds/w_clipin.wav'],
   empty:  ['sounds/w_empty.wav'],
   flesh:  ['sounds/hit1.wav', 'sounds/hit2.wav'],
-  zdie:   ['sounds/dieZombie.wav', 'sounds/die_Zombie2.wav'],
+  zdie:   ['sounds/diezombie.wav', 'sounds/die_zombie2.wav'],
   pdie:   ['sounds/die1.wav'],
   cap:    ['sounds/life.wav'],
   wood:   ['sounds/wood1.wav', 'sounds/wood2.wav'],
@@ -212,11 +217,14 @@ function ensureAudio(){
   for (const [name, files] of Object.entries(SOUND_FILES)){
     SND[name] = [];
     files.forEach(f => {
-      fetch(f)
+      const tryLoad = url => fetch(url)
         .then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
         .then(ab => AC.decodeAudioData(ab))
-        .then(buf => SND[name].push(buf))
-        .catch(() => {});
+        .then(buf => SND[name].push(buf));
+      tryLoad(f).catch(() => {
+        const alt = f.split('/').pop();
+        if (alt !== f) tryLoad(alt).catch(() => {});
+      });
     });
   }
   STEPS_B64.forEach(b64 => {
@@ -388,6 +396,15 @@ function circleHit(x,y,r){
   return null;
 }
 
+function zInBase(x, y, r){
+  const zones = gameMode === 'vs' ? [baseA, baseB] : [baseA];
+  for (const b of zones){
+    const cx = Math.max(b.x, Math.min(x, b.x+b.w));
+    const cy = Math.max(b.y, Math.min(y, b.y+b.h));
+    if ((x-cx)*(x-cx)+(y-cy)*(y-cy) < r*r) return true;
+  }
+  return false;
+}
 function circRect(x, y, r, rc){
   const cx = Math.max(rc.x, Math.min(x, rc.x+rc.w));
   const cy = Math.max(rc.y, Math.min(y, rc.y+rc.h));
@@ -563,8 +580,8 @@ function spawnEnemy(){
     const x = Math.min(WW-44, Math.max(44, me.x + Math.cos(a)*d));
     const y = Math.min(WH-44, Math.max(44, me.y + Math.sin(a)*d));
     const farMate = !mate || mate.dead || Math.hypot(x-mate.x,y-mate.y) > 230;
-    if (Math.hypot(x-me.x,y-me.y) > 270 && farMate && !circleHit(x,y,12)){
-      zombies.push({x,y,r:11,hp:5,hurtT:0,wob:Math.random()*6.28,ph:Math.random()*6.28,a:0,
+    if (Math.hypot(x-me.x,y-me.y) > 270 && farMate && !circleHit(x,y,12) && !zInBase(x, y, 30)){
+      zombies.push({x,y,r:11,hp:ZMAX(),hurtT:0,wob:Math.random()*6.28,ph:Math.random()*6.28,a:0,
         si:Math.floor(Math.random()*3), hi:Math.floor(Math.random()*4),
         tx:x, ty:y, ta:0});
       return;
@@ -919,18 +936,18 @@ function hostSim(dt){
     const a = Math.atan2(tg.y-z.y, tg.x-z.x) + (lunge || crawl ? 0 : Math.sin(z.wob)*0.3);
     z.a = a;
     const totCaps = gameMode === 'vs' ? caps1+caps2 : caps;
-    let zs = crawl ? 26 : (48 + totCaps*6) * (lunge ? 1.8 : 1);
+    let zs = crawl ? 26 : (48 + totCaps*6) * (lunge ? 1.8 : 1) * (easyMode ? 0.72 : 1);
     if (z.stag > 0){ z.stag -= dt; zs *= 0.12; }
     z.ph += zs*dt*(crawl ? 0.2 : 0.09);
     let zx = z.x + Math.cos(a)*zs*dt;
-    if (!circleHit(zx,z.y,z.r)) z.x = zx;
+    if (!circleHit(zx,z.y,z.r) && !zInBase(zx, z.y, z.r)) z.x = zx;
     let zy = z.y + Math.sin(a)*zs*dt;
-    if (!circleHit(z.x,zy,z.r)) z.y = zy;
+    if (!circleHit(z.x,zy,z.r) && !zInBase(z.x, zy, z.r)) z.y = zy;
     if (!me.dead && Math.hypot(z.x-me.x,z.y-me.y) < z.r+me.r+2 && hitCd <= 0){
-      hitCd = 0.7; hurtPlayer(me, 1, z.hp <= 1 ? 15 : 25);
+      hitCd = 0.7; hurtPlayer(me, 1, easyMode ? (z.hp <= 1 ? 10 : 15) : (z.hp <= 1 ? 15 : 25));
     }
     if (mate && !mate.dead && Math.hypot(z.x-mate.x,z.y-mate.y) < z.r+mate.r+2 && hitCd2 <= 0){
-      hitCd2 = 0.7; hurtPlayer(mate, 2, z.hp <= 1 ? 15 : 25);
+      hitCd2 = 0.7; hurtPlayer(mate, 2, easyMode ? (z.hp <= 1 ? 10 : 15) : (z.hp <= 1 ? 15 : 25));
     }
   }
 
@@ -1026,7 +1043,7 @@ function hostSim(dt){
     const maxE = (mate ? 3 : 2) + Math.min(4, totCaps);
     if (spawnT <= 0 && zombies.length < maxE){
       spawnEnemy();
-      spawnT = Math.max(2.2, 4.5 - totCaps*0.3);
+      spawnT = Math.max(2.2, 4.5 - totCaps*0.3) * (easyMode ? 1.35 : 1);
     }
   }
   ui();
@@ -1338,7 +1355,7 @@ function drawCrawler(z){
   ctx.fillStyle = '#501313';
   ctx.fillRect(-10,-18,20,3);
   ctx.fillStyle = '#A32D2D';
-  ctx.fillRect(-10,-18,4,3);
+  ctx.fillRect(-10,-18,20/ZMAX(),3);
   ctx.restore();
 }
 
@@ -1373,12 +1390,12 @@ function drawZombie(z){
   ctx.fill();
   ctx.fillStyle = '#8A1010';
   ctx.beginPath(); ctx.arc(4.2,-2.2,1.1,0,6.29); ctx.arc(4.2,2.2,1.1,0,6.29); ctx.fill();
-  if (z.hp < 5){
+  if (z.hp < ZMAX()){
     ctx.rotate(-z.a);
     ctx.fillStyle = '#501313';
     ctx.fillRect(-10,-z.r-9,20,3);
     ctx.fillStyle = '#A32D2D';
-    ctx.fillRect(-10,-z.r-9,20*Math.max(0,z.hp)/5,3);
+    ctx.fillRect(-10,-z.r-9,20*Math.max(0,z.hp)/ZMAX(),3);
   }
   ctx.restore();
 }
@@ -1718,7 +1735,7 @@ function chosenMode(){ return document.getElementById('gm-vs').checked ? 'vs' : 
 function bindConn(){
   conn.on('data', d => {
     if (d.t === 'i'){
-      isHost = false; zombOn = d.z;
+      isHost = false; zombOn = d.z; easyMode = !!d.e;
       startGame(d.seed, true, d.gm);
       setStatus('');
     } else if (d.t === 's'){ applySnapshot(d); }
@@ -1740,12 +1757,14 @@ function bindConn(){
 document.getElementById('b-solo').onclick = () => {
   ensureAudio();
   isHost = true; zombOn = document.getElementById('zomb').checked;
+  easyMode = document.getElementById('df-easy').checked;
   startGame(Math.floor(Math.random()*1e9), false, 'coop');
 };
 
 document.getElementById('b-host').onclick = () => {
   ensureAudio();
   isHost = true; zombOn = document.getElementById('zomb').checked;
+  easyMode = document.getElementById('df-easy').checked;
   const code = Array.from({length:4}, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('');
   setStatus('Cr\u00e9ation de la partie...');
   peer = new Peer('dflag-' + code.toLowerCase());
@@ -1761,7 +1780,7 @@ document.getElementById('b-host').onclick = () => {
       bindConn();
       const gm = chosenMode();
       startGame(Math.floor(Math.random()*1e9), true, gm);
-      conn.send({t:'i', seed, z:zombOn, gm});
+      conn.send({t:'i', seed, z:zombOn, gm, e:easyMode ? 1 : 0});
       setStatus('');
     });
   });
@@ -1807,7 +1826,7 @@ cv.addEventListener('mousedown', ev => {
   if (over){
     if (isHost){
       startGame(Math.floor(Math.random()*1e9), !!conn, gameMode);
-      if (conn) conn.send({t:'i', seed, z:zombOn, gm:gameMode});
+      if (conn) conn.send({t:'i', seed, z:zombOn, gm:gameMode, e:easyMode ? 1 : 0});
     }
     return;
   }

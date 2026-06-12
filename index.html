@@ -144,6 +144,17 @@ let mode = 'menu', gameMode = 'coop', easyMode = false;
 function ZMAX(){ return easyMode ? 3 : 5; }
 let isHost = true, zombOn = true, seed = 1;
 let peer = null, conn = null;
+const PEER_OPTS = {
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:openrelay.metered.ca:80' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+    ]
+  }
+};
 let walls, me, mate, zombies, bullets, parts, blood, shells, corpses;
 let keys = {}, mouseS = {x:VW/2, y:VH/2}, firing = false;
 let score = 0, caps = 0, caps1 = 0, caps2 = 0, winner = 0;
@@ -356,8 +367,8 @@ function genMap(sd){
   const w = [];
   let id = 0;
   function add(r){ r.id = id++; w.push(r); }
-  add({x:-20,y:-20,w:WW+40,h:24,d:0}); add({x:-20,y:WH-4,w:WW+40,h:24,d:0});
-  add({x:-20,y:-20,w:24,h:WH+40,d:0}); add({x:WW-4,y:-20,w:24,h:WH+40,d:0});
+  add({x:-20,y:-20,w:WW+40,h:24,d:0,bd:1}); add({x:-20,y:WH-4,w:WW+40,h:24,d:0,bd:1});
+  add({x:-20,y:-20,w:24,h:WH+40,d:0,bd:1}); add({x:WW-4,y:-20,w:24,h:WH+40,d:0,bd:1});
   const infA = {x:0, y:0, w:baseA.x+baseA.w+70, h:baseA.y+baseA.h+70};
   const infB = {x:baseB.x-70, y:baseB.y-70, w:WW-(baseB.x-70), h:WH-(baseB.y-70)};
   let placed = 0, tries = 0;
@@ -890,6 +901,10 @@ function hostSim(dt){
           sfx.wood(dvol(b.x,b.y));
           boom(b.x,b.y,'#BA7517',5); ev({e:'hb', x:b.x, y:b.y, c:1});
           if (w.hp<=0) destroyWall(w);
+          dead = true; break;
+        }
+        if (w.bd){
+          boom(b.x,b.y,'#555550',3);
           dead = true; break;
         }
         sfx.ric(dvol(b.x,b.y));
@@ -1793,7 +1808,7 @@ document.getElementById('b-host').onclick = () => {
   easyMode = document.getElementById('df-easy').checked;
   const code = Array.from({length:4}, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('');
   setStatus('Cr\u00e9ation de la partie...');
-  peer = new Peer('dflag-' + code.toLowerCase());
+  peer = new Peer('dflag-' + code.toLowerCase(), PEER_OPTS);
   peer.on('open', () => {
     document.getElementById('m-main').classList.add('hidden');
     document.getElementById('m-wait').classList.remove('hidden');
@@ -1818,7 +1833,7 @@ document.getElementById('b-join').onclick = () => {
   const code = document.getElementById('joincode').value.trim().toLowerCase();
   if (code.length !== 4){ setStatus('Entrez le code \u00e0 4 caract\u00e8res.'); return; }
   setStatus('Connexion...');
-  peer = new Peer();
+  peer = new Peer(PEER_OPTS);
   peer.on('open', () => {
     conn = peer.connect('dflag-' + code, {reliable:true});
     conn.on('open', () => { bindConn(); setStatus('Connect\u00e9, en attente de la carte...'); });

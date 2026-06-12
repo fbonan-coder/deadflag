@@ -103,6 +103,7 @@
       <button class="btn red" id="b-cancel">Annuler</button>
     </div>
     <div id="status"></div>
+    <div id="ver" style="font-size:10px; color:#3a3833; letter-spacing:2px; margin-top:4px;"></div>
   </div>
   <div class="help">
     <span>&#8593; avancer &middot; &#8592;&#8594; strafe &middot; &#8595; reculer</span>
@@ -112,6 +113,7 @@
 </div>
 <div class="credit">FOV 120&deg; &middot; carte al&eacute;atoire &middot; WebRTC pair-&agrave;-pair &middot; duel : premier &agrave; 3 captures</div>
 <script>
+const GAME_VERSION = 'v1.0.0 · build 13.06.2026-a';
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 let VW = 656, VH = 430, DPR = 1;
@@ -144,17 +146,30 @@ let mode = 'menu', gameMode = 'coop', easyMode = false;
 function ZMAX(){ return easyMode ? 3 : 5; }
 let isHost = true, zombOn = true, seed = 1;
 let peer = null, conn = null;
+const TURN_USER = 'df6df37bda23c51a769ba718';
+const TURN_PASS = 'RlSMlZr6colssUsd';
 const PEER_OPTS = {
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:openrelay.metered.ca:80' },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+      { urls: 'stun:stun.relay.metered.ca:80' },
+      { urls: 'turn:standard.relay.metered.ca:80', username: TURN_USER, credential: TURN_PASS },
+      { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username: TURN_USER, credential: TURN_PASS },
+      { urls: 'turn:standard.relay.metered.ca:443', username: TURN_USER, credential: TURN_PASS },
+      { urls: 'turns:standard.relay.metered.ca:443?transport=tcp', username: TURN_USER, credential: TURN_PASS }
     ]
   }
 };
+async function getPeerOpts(){
+  try {
+    const r = await fetch('https://deadflag.metered.live/api/v1/turn/credentials?apiKey=60075c0b77150dcd15b1ae7c5df7e9a9dd4e');
+    if (!r.ok) throw 0;
+    const ice = await r.json();
+    return { config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, ...ice] } };
+  } catch(e){
+    return PEER_OPTS;
+  }
+}
 let walls, me, mate, zombies, bullets, parts, blood, shells, corpses;
 let keys = {}, mouseS = {x:VW/2, y:VH/2}, firing = false;
 let score = 0, caps = 0, caps1 = 0, caps2 = 0, winner = 0;
@@ -1802,13 +1817,14 @@ document.getElementById('b-solo').onclick = () => {
   startGame(Math.floor(Math.random()*1e9), false, 'coop');
 };
 
-document.getElementById('b-host').onclick = () => {
+document.getElementById('b-host').onclick = async () => {
   ensureAudio();
   isHost = true; zombOn = document.getElementById('zomb').checked;
   easyMode = document.getElementById('df-easy').checked;
   const code = Array.from({length:4}, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('');
   setStatus('Cr\u00e9ation de la partie...');
-  peer = new Peer('dflag-' + code.toLowerCase(), PEER_OPTS);
+  const opts = await getPeerOpts();
+  peer = new Peer('dflag-' + code.toLowerCase(), opts);
   peer.on('open', () => {
     document.getElementById('m-main').classList.add('hidden');
     document.getElementById('m-wait').classList.remove('hidden');
@@ -1828,12 +1844,13 @@ document.getElementById('b-host').onclick = () => {
   peer.on('error', e => backToMenu('Erreur r\u00e9seau : ' + e.type));
 };
 
-document.getElementById('b-join').onclick = () => {
+document.getElementById('b-join').onclick = async () => {
   ensureAudio();
   const code = document.getElementById('joincode').value.trim().toLowerCase();
   if (code.length !== 4){ setStatus('Entrez le code \u00e0 4 caract\u00e8res.'); return; }
   setStatus('Connexion...');
-  peer = new Peer(PEER_OPTS);
+  const opts = await getPeerOpts();
+  peer = new Peer(opts);
   peer.on('open', () => {
     conn = peer.connect('dflag-' + code, {reliable:true});
     conn.on('open', () => { bindConn(); setStatus('Connect\u00e9, en attente de la carte...'); });
@@ -1889,6 +1906,7 @@ document.getElementById('fs').onclick = () => {
   else if (fr.requestFullscreen) fr.requestFullscreen();
 };
 
+document.getElementById('ver').textContent = GAME_VERSION;
 resizeCanvas();
 requestAnimationFrame(loop);
 </script>
